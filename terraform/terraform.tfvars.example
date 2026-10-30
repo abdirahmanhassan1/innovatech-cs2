@@ -1,0 +1,14 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is not committed.
+
+# Public IP of the admin laptop. Run "curl ifconfig.me" on the laptop itself, not in CloudShell.
+admin_cidr = "203.0.113.10/32"
+
+# Existing EC2 key pair.
+key_name = "innovatech-key"
+
+# Ubuntu 24.04 AMI in eu-central-1, looked up once and then kept fixed.
+ami_id = "ami-xxxxxxxxxxxxxxxxx"
+
+# Budget alerts. Leave budget_email empty to skip.
+budget_email     = ""
+budget_limit_usd = 50
