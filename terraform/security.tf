@@ -3,15 +3,17 @@
 
 resource "aws_security_group" "onprem_gw" {
   name        = "onprem-gw-sg"
-  description = "Office gateway: VPN from cloud-edge, SSH from admin, traffic from the office network"
+  description = "Office gateway: VPN from cloud-edge, SSH from the internet, traffic from the office network"
   vpc_id      = aws_vpc.office.id
 
+  # SSH is open to the internet on purpose: onprem-gw is the monitored attack
+  # surface for the SOAR. Only key-based login is possible, password login is disabled.
   ingress {
-    description = "SSH from admin laptop"
+    description = "SSH from the internet, key-based login only"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = [var.admin_cidr]
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
@@ -148,7 +150,7 @@ resource "aws_network_acl" "office_public" {
 locals {
   office_nacl_ingress = {
     "100" = { protocol = "-1", cidr = var.office_cidr, from = 0, to = 0 }                                 # office network
-    "110" = { protocol = "tcp", cidr = var.admin_cidr, from = 22, to = 22 }                               # admin SSH
+    "110" = { protocol = "tcp", cidr = "0.0.0.0/0", from = 22, to = 22 }                                # SSH, monitored by the SOAR
     "120" = { protocol = "udp", cidr = "${aws_eip.cloud_edge.public_ip}/32", from = 51820, to = 51820 }    # VPN
     "130" = { protocol = "tcp", cidr = "0.0.0.0/0", from = 1024, to = 65535 }                             # return traffic
     "140" = { protocol = "udp", cidr = "0.0.0.0/0", from = 1024, to = 65535 }                             # return traffic

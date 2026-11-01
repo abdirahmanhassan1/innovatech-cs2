@@ -5,6 +5,14 @@ set -euxo pipefail
 
 hostnamectl set-hostname ${hostname}
 
+# Key-based SSH only. The 10- prefix makes this file win over the image defaults.
+cat > /etc/ssh/sshd_config.d/10-hardening.conf <<'EOF'
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+EOF
+systemctl reload ssh || true
+
 # Forward packets for other hosts.
 cat > /etc/sysctl.d/99-gateway.conf <<'EOF'
 net.ipv4.ip_forward = 1
