@@ -13,12 +13,11 @@
         depth: 1
         force: true
 
-    - name: Loki data directory (not created by the Loki package)
+    - name: Loki data directory (not created by the Loki package, which has no loki group)
       ansible.builtin.file:
         path: /var/lib/loki
         state: directory
         owner: loki
-        group: loki
         mode: "0750"
       notify: Restart loki
 
