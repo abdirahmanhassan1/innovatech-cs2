@@ -55,7 +55,7 @@ variable "tunnel_cidr" {
 }
 
 variable "budget_email" {
-  description = "Email address for the budget alerts. Leave empty to skip the budget."
+  description = "Email address for the budget alerts and the monitoring alerts. Leave empty to skip the budget."
   type        = string
   default     = ""
 }
@@ -64,4 +64,30 @@ variable "budget_limit_usd" {
   description = "Monthly budget in USD. Set this to the remaining credit of the sandbox account."
   type        = number
   default     = 50
+}
+
+# ---------- Monitoring (step 2) ----------
+
+variable "monitoring_instance_type" {
+  description = "Instance type for the monitoring server (Prometheus, Loki, Grafana)."
+  type        = string
+  default     = "t3.medium"
+}
+
+variable "grafana_admin_password" {
+  description = "Password of the Grafana admin user. Set it in terraform.tfvars, never in the repository."
+  type        = string
+  sensitive   = true
+}
+
+variable "repo_url" {
+  description = "Public repository the monitoring server reads its configuration from at boot."
+  type        = string
+  default     = "https://github.com/abdirahmanhassan1/innovatech-cs2.git"
+}
+
+variable "repo_branch" {
+  description = "Branch the monitoring server reads its configuration from."
+  type        = string
+  default     = "main"
 }
