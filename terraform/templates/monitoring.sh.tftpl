@@ -38,6 +38,8 @@ systemctl restart prometheus
 
 # Loki: logs stored in S3 through the gateway endpoint.
 sed -e "s|LOKI_BUCKET|${loki_bucket}|" -e "s|AWS_REGION|${region}|" $CFG/monitoring/loki/loki.yaml > /etc/loki/config.yml
+# The Loki package does not create the data directory used in loki.yaml.
+install -d -o loki -g loki -m 0750 /var/lib/loki
 systemctl enable loki
 systemctl restart loki
 

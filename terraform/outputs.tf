@@ -62,7 +62,7 @@ output "ansible_inventory" {
     onprem-srv ansible_host=${local.onprem_srv_ip} ansible_ssh_common_args='-o ProxyJump=ubuntu@${aws_eip.cloud_edge.public_ip}'
 
     [monitoring]
-    monitoring ansible_host=monitoring.innovatech.internal ansible_ssh_common_args='-o ProxyJump=ubuntu@${aws_eip.cloud_edge.public_ip}'
+    monitoring-server ansible_host=monitoring.innovatech.internal ansible_ssh_common_args='-o ProxyJump=ubuntu@${aws_eip.cloud_edge.public_ip}'
 
     [gateways:children]
     office_gateway
