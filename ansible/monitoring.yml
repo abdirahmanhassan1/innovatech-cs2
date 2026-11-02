@@ -1,0 +1,52 @@
+# Updates the configuration of the running monitoring server from the main branch,
+# without replacing the server. A replacement server reads the same files at boot.
+- name: Monitoring server configuration
+  hosts: monitoring
+  become: true
+
+  tasks:
+    - name: Latest configuration from the main branch
+      ansible.builtin.git:
+        repo: https://github.com/abdirahmanhassan1/innovatech-cs2.git
+        dest: /opt/innovatech
+        version: main
+        depth: 1
+        force: true
+
+    - name: Grafana alert rules
+      ansible.builtin.copy:
+        src: /opt/innovatech/grafana/provisioning/alerting/rules.yaml
+        dest: /etc/grafana/provisioning/alerting/rules.yaml
+        remote_src: true
+        group: grafana
+        mode: "0640"
+      notify: Restart grafana
+
+    - name: Grafana dashboards
+      ansible.builtin.copy:
+        src: /opt/innovatech/grafana/dashboards/
+        dest: /var/lib/grafana/dashboards/
+        remote_src: true
+        owner: grafana
+        group: grafana
+        mode: "0644"
+      notify: Restart grafana
+
+    - name: Prometheus configuration
+      ansible.builtin.copy:
+        src: /opt/innovatech/monitoring/prometheus/prometheus.yml
+        dest: /etc/prometheus/prometheus.yml
+        remote_src: true
+        mode: "0644"
+      notify: Restart prometheus
+
+  handlers:
+    - name: Restart grafana
+      ansible.builtin.systemd:
+        name: grafana-server
+        state: restarted
+
+    - name: Restart prometheus
+      ansible.builtin.systemd:
+        name: prometheus
+        state: restarted

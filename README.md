@@ -42,6 +42,12 @@ cd ansible
 ansible-playbook agents.yml
 ```
 
+Configuration changes for the running monitoring server are merged to `main` first and then applied with:
+
+```bash
+ansible-playbook monitoring.yml
+```
+
 Grafana is not public. It is opened through an SSH tunnel (see the Terraform output `grafana_tunnel`).
 
 No secrets are stored in this repository. `terraform.tfvars` and key files are excluded through `.gitignore`.
