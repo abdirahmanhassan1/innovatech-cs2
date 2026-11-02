@@ -1,6 +1,4 @@
 # Alert rules, provisioned at boot. Thresholds follow section 2 of the design document.
-# Note: "$$" is a literal "$" in Grafana provisioning files (a single "$" is read as
-# an environment variable).
 apiVersion: 1
 
 groups:
@@ -29,7 +27,7 @@ groups:
             model:
               refId: C
               type: math
-              expression: "$$A >= 10"
+              expression: "$A >= 10"
         noDataState: OK
         execErrState: Error
         for: 0s
@@ -38,7 +36,7 @@ groups:
           alert_type: ssh_bruteforce
           category: security
         annotations:
-          summary: "SSH brute force from {{ $$labels.src_ip }} on {{ $$labels.host }}"
+          summary: "SSH brute force from {{ $labels.src_ip }} on {{ $labels.host }}"
           description: "10 or more failed SSH logins from one IP address within 5 minutes."
 
       - uid: ssh-login-failures
@@ -60,7 +58,7 @@ groups:
             model:
               refId: C
               type: math
-              expression: "$$A >= 3 && $$A < 10"
+              expression: "$A >= 3 && $A < 10"
         noDataState: OK
         execErrState: Error
         for: 0s
@@ -69,7 +67,7 @@ groups:
           alert_type: ssh_login_failures
           category: security
         annotations:
-          summary: "{{ $$values.A }} failed SSH logins from {{ $$labels.src_ip }} on {{ $$labels.host }}"
+          summary: "{{ $values.A }} failed SSH logins from {{ $labels.src_ip }} on {{ $labels.host }}"
           description: "3 to 9 failed SSH logins from one IP address within 5 minutes."
 
       - uid: port-scan
@@ -100,7 +98,7 @@ groups:
             model:
               refId: C
               type: math
-              expression: "$$A >= 20 && $$B >= 10"
+              expression: "$A >= 20 && $B >= 10"
         noDataState: OK
         execErrState: Error
         for: 0s
@@ -109,7 +107,7 @@ groups:
           alert_type: port_scan
           category: security
         annotations:
-          summary: "Port scan from {{ $$labels.src_ip }} on {{ $$labels.host }}"
+          summary: "Port scan from {{ $labels.src_ip }} on {{ $labels.host }}"
           description: "20 or more blocked connections to 10 or more ports from one IP address within 2 minutes."
 
   # ---------- Operational alerts (metrics, Prometheus) ----------
@@ -135,7 +133,7 @@ groups:
             model:
               refId: C
               type: math
-              expression: "$$A < 1"
+              expression: "$A < 1"
         noDataState: Alerting
         execErrState: Error
         for: 2m
@@ -144,7 +142,7 @@ groups:
           alert_type: host_down
           category: operations
         annotations:
-          summary: "{{ $$labels.host }} is not reachable"
+          summary: "{{ $labels.host }} is not reachable"
           description: "The server has not answered for 2 minutes. If all office servers are down at the same time, check the VPN tunnel."
 
       - uid: high-cpu
@@ -164,7 +162,7 @@ groups:
             model:
               refId: C
               type: math
-              expression: "$$A > 85"
+              expression: "$A > 85"
         noDataState: OK
         execErrState: Error
         for: 10m
@@ -173,7 +171,7 @@ groups:
           alert_type: high_cpu
           category: operations
         annotations:
-          summary: "CPU usage on {{ $$labels.host }} is above 85%"
+          summary: "CPU usage on {{ $labels.host }} is above 85%"
 
       - uid: disk-full
         title: Disk almost full
@@ -192,7 +190,7 @@ groups:
             model:
               refId: C
               type: math
-              expression: "$$A > 85"
+              expression: "$A > 85"
         noDataState: OK
         execErrState: Error
         for: 10m
@@ -201,4 +199,4 @@ groups:
           alert_type: disk_full
           category: operations
         annotations:
-          summary: "Disk usage on {{ $$labels.host }} is above 85%"
+          summary: "Disk usage on {{ $labels.host }} is above 85%"
