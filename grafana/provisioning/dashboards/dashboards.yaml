@@ -1,0 +1,11 @@
+# Dashboards are loaded from files, so they are versioned in the repository.
+apiVersion: 1
+
+providers:
+  - name: innovatech
+    folder: Innovatech
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
