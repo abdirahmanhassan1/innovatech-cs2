@@ -1,0 +1,46 @@
+# Loki configuration: single server, log data stored in S3.
+# LOKI_BUCKET and AWS_REGION are filled in at boot.
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+common:
+  path_prefix: /var/lib/loki
+  instance_addr: 127.0.0.1
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+  storage:
+    s3:
+      region: AWS_REGION
+      bucketnames: LOKI_BUCKET
+      s3forcepathstyle: false
+
+schema_config:
+  configs:
+    - from: 2026-01-01
+      store: tsdb
+      object_store: s3
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+storage_config:
+  tsdb_shipper:
+    active_index_directory: /var/lib/loki/tsdb-index
+    cache_location: /var/lib/loki/tsdb-cache
+
+compactor:
+  working_directory: /var/lib/loki/compactor
+  retention_enabled: true
+  delete_request_store: s3
+
+# Logs contain IP addresses and user names (personal data), so they are kept
+# for 90 days and then deleted. See the data lifecycle analysis.
+limits_config:
+  retention_period: 2160h
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h

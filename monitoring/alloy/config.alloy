@@ -1,0 +1,20 @@
+// Grafana Alloy: sends the SSH login log and the kernel log (firewall drops)
+// of this host to Loki on the monitoring server.
+
+local.file_match "logs" {
+  path_targets = [
+    {"__path__" = "/var/log/auth.log", "job" = "auth", "host" = constants.hostname},
+    {"__path__" = "/var/log/kern.log", "job" = "firewall", "host" = constants.hostname},
+  ]
+}
+
+loki.source.file "logs" {
+  targets    = local.file_match.logs.targets
+  forward_to = [loki.write.monitoring.receiver]
+}
+
+loki.write "monitoring" {
+  endpoint {
+    url = "http://monitoring.innovatech.internal:3100/loki/api/v1/push"
+  }
+}
