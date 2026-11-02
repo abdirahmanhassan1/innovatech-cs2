@@ -13,6 +13,15 @@
         depth: 1
         force: true
 
+    - name: Loki data directory (not created by the Loki package)
+      ansible.builtin.file:
+        path: /var/lib/loki
+        state: directory
+        owner: loki
+        group: loki
+        mode: "0750"
+      notify: Restart loki
+
     - name: Grafana alert rules
       ansible.builtin.copy:
         src: /opt/innovatech/grafana/provisioning/alerting/rules.yaml
@@ -22,10 +31,21 @@
         mode: "0640"
       notify: Restart grafana
 
-    - name: Grafana dashboards
+    # The directory needs execute permission, otherwise Grafana cannot open the files
+    # inside it and stops at startup.
+    - name: Grafana dashboard directory
+      ansible.builtin.file:
+        path: /var/lib/grafana/dashboards
+        state: directory
+        owner: grafana
+        group: grafana
+        mode: "0755"
+      notify: Restart grafana
+
+    - name: Grafana dashboard
       ansible.builtin.copy:
-        src: /opt/innovatech/grafana/dashboards/
-        dest: /var/lib/grafana/dashboards/
+        src: /opt/innovatech/grafana/dashboards/innovatech-overview.json
+        dest: /var/lib/grafana/dashboards/innovatech-overview.json
         remote_src: true
         owner: grafana
         group: grafana
@@ -49,4 +69,9 @@
     - name: Restart prometheus
       ansible.builtin.systemd:
         name: prometheus
+        state: restarted
+
+    - name: Restart loki
+      ansible.builtin.systemd:
+        name: loki
         state: restarted
