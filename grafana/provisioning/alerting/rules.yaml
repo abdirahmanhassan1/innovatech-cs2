@@ -1,0 +1,204 @@
+# Alert rules, provisioned at boot. Thresholds follow section 2 of the design document.
+# Note: "$$" is a literal "$" in Grafana provisioning files (a single "$" is read as
+# an environment variable).
+apiVersion: 1
+
+groups:
+  # ---------- Security alerts (log based, Loki) ----------
+  - orgId: 1
+    name: security
+    folder: Innovatech
+    interval: 1m
+    rules:
+      - uid: ssh-bruteforce
+        title: SSH brute force
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: A
+              queryType: instant
+              expr: >-
+                sum by (host, src_ip) (count_over_time({job="auth"}
+                |~ `Invalid user|Failed password|Failed publickey|Connection closed by authenticating user`
+                | regexp `(?P<src_ip>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) port` [5m]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: math
+              expression: "$$A >= 10"
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: high
+          alert_type: ssh_bruteforce
+          category: security
+        annotations:
+          summary: "SSH brute force from {{ $$labels.src_ip }} on {{ $$labels.host }}"
+          description: "10 or more failed SSH logins from one IP address within 5 minutes."
+
+      - uid: ssh-login-failures
+        title: SSH login failures
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: A
+              queryType: instant
+              expr: >-
+                sum by (host, src_ip) (count_over_time({job="auth"}
+                |~ `Invalid user|Failed password|Failed publickey|Connection closed by authenticating user`
+                | regexp `(?P<src_ip>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) port` [5m]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: math
+              expression: "$$A >= 3 && $$A < 10"
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: medium
+          alert_type: ssh_login_failures
+          category: security
+        annotations:
+          summary: "{{ $$values.A }} failed SSH logins from {{ $$labels.src_ip }} on {{ $$labels.host }}"
+          description: "3 to 9 failed SSH logins from one IP address within 5 minutes."
+
+      - uid: port-scan
+        title: Port scan
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 120, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: A
+              queryType: instant
+              expr: >-
+                sum by (host, src_ip) (count_over_time({job="firewall"} |= "nft-drop-in"
+                | regexp `SRC=(?P<src_ip>\S+) ` [2m]))
+          - refId: B
+            relativeTimeRange: { from: 120, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: B
+              queryType: instant
+              expr: >-
+                count by (host, src_ip) (sum by (host, src_ip, dpt) (count_over_time({job="firewall"}
+                |= "nft-drop-in" |= "DPT="
+                | regexp `SRC=(?P<src_ip>\S+) .*DPT=(?P<dpt>\d+)` [2m])))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: math
+              expression: "$$A >= 20 && $$B >= 10"
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: high
+          alert_type: port_scan
+          category: security
+        annotations:
+          summary: "Port scan from {{ $$labels.src_ip }} on {{ $$labels.host }}"
+          description: "20 or more blocked connections to 10 or more ports from one IP address within 2 minutes."
+
+  # ---------- Operational alerts (metrics, Prometheus) ----------
+  - orgId: 1
+    name: operations
+    folder: Innovatech
+    interval: 1m
+    rules:
+      - uid: host-down
+        title: Server down
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 60, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: up{job="node"}
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: math
+              expression: "$$A < 1"
+        noDataState: Alerting
+        execErrState: Error
+        for: 2m
+        labels:
+          severity: high
+          alert_type: host_down
+          category: operations
+        annotations:
+          summary: "{{ $$labels.host }} is not reachable"
+          description: "The server has not answered for 2 minutes. If all office servers are down at the same time, check the VPN tunnel."
+
+      - uid: high-cpu
+        title: High CPU usage
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: 100 - avg by (host) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: math
+              expression: "$$A > 85"
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        labels:
+          severity: medium
+          alert_type: high_cpu
+          category: operations
+        annotations:
+          summary: "CPU usage on {{ $$labels.host }} is above 85%"
+
+      - uid: disk-full
+        title: Disk almost full
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              range: false
+              expr: max by (host) (100 * (1 - node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: math
+              expression: "$$A > 85"
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        labels:
+          severity: medium
+          alert_type: disk_full
+          category: operations
+        annotations:
+          summary: "Disk usage on {{ $$labels.host }} is above 85%"

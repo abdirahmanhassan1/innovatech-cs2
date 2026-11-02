@@ -1,4 +1,5 @@
-# Budget alerts at 50, 75 and 90 percent. Skipped when budget_email is empty.
+# Budget alerts at 50, 75 and 90 percent, sent through the SNS topic in alerts.tf.
+# Skipped when budget_email is empty.
 
 resource "aws_budgets_budget" "monthly" {
   count        = var.budget_email == "" ? 0 : 1
@@ -15,7 +16,7 @@ resource "aws_budgets_budget" "monthly" {
       threshold                  = notification.value
       threshold_type             = "PERCENTAGE"
       notification_type          = "ACTUAL"
-      subscriber_email_addresses = [var.budget_email]
+      subscriber_sns_topic_arns  = [aws_sns_topic.alerts.arn]
     }
   }
 }

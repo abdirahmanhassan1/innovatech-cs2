@@ -12,3 +12,6 @@ ami_id = "ami-xxxxxxxxxxxxxxxxx"
 # Budget alerts. Leave budget_email empty to skip.
 budget_email     = ""
 budget_limit_usd = 50
+
+# Grafana admin password (step 2). Choose a strong password.
+grafana_admin_password = "change-me"

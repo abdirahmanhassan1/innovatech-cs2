@@ -1,0 +1,62 @@
+#!/bin/bash
+# First-boot setup of the monitoring server. Rendered by Terraform.
+# All configuration files come from the repository, so a replacement server
+# (started by the Auto Scaling group) gets exactly the same setup.
+set -euxo pipefail
+
+hostnamectl set-hostname monitoring
+export DEBIAN_FRONTEND=noninteractive
+
+# Internet access goes through cloud-edge (NAT), retry until it is available.
+for i in $(seq 1 30); do apt-get update && break; sleep 10; done
+apt-get install -y prometheus prometheus-node-exporter git curl gpg
+
+# Grafana, Loki and Alloy from the official Grafana package repository.
+mkdir -p /etc/apt/keyrings
+curl -fsSL https://apt.grafana.com/gpg.key | gpg --dearmor -o /etc/apt/keyrings/grafana.gpg
+echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" > /etc/apt/sources.list.d/grafana.list
+apt-get update
+apt-get install -y grafana loki alloy
+snap install aws-cli --classic
+
+# Register this server in the private DNS zone (monitoring.innovatech.internal).
+TOKEN=$(curl -s -X PUT http://169.254.169.254/latest/api/token -H "X-aws-ec2-metadata-token-ttl-seconds: 300")
+IP=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/local-ipv4)
+cat > /tmp/dns.json <<EOF
+{"Changes":[{"Action":"UPSERT","ResourceRecordSet":{"Name":"monitoring.innovatech.internal","Type":"A","TTL":60,"ResourceRecords":[{"Value":"$IP"}]}}]}
+EOF
+/snap/bin/aws route53 change-resource-record-sets --hosted-zone-id ${zone_id} --change-batch file:///tmp/dns.json
+
+# Configuration from the repository.
+git clone --depth 1 --branch ${repo_branch} ${repo_url} /opt/innovatech
+CFG=/opt/innovatech
+
+# Prometheus: metrics kept for 15 days.
+cp $CFG/monitoring/prometheus/prometheus.yml /etc/prometheus/prometheus.yml
+sed -i 's|^ARGS=.*|ARGS="--storage.tsdb.retention.time=15d"|' /etc/default/prometheus
+systemctl restart prometheus
+
+# Loki: logs stored in S3 through the gateway endpoint.
+sed -e "s|LOKI_BUCKET|${loki_bucket}|" -e "s|AWS_REGION|${region}|" $CFG/monitoring/loki/loki.yaml > /etc/loki/config.yml
+systemctl enable loki
+systemctl restart loki
+
+# Alloy: this server also sends its own logs to Loki.
+cp $CFG/monitoring/alloy/config.alloy /etc/alloy/config.alloy
+usermod -aG adm alloy
+systemctl enable alloy
+systemctl restart alloy
+
+# Grafana: data sources, dashboards and alert rules from the repository.
+cp -r $CFG/grafana/provisioning/. /etc/grafana/provisioning/
+mkdir -p /var/lib/grafana/dashboards
+cp $CFG/grafana/dashboards/*.json /var/lib/grafana/dashboards/
+sed -i "s|SNS_TOPIC_ARN|${sns_topic_arn}|; s|AWS_REGION|${region}|" /etc/grafana/provisioning/alerting/*.yaml /etc/grafana/provisioning/datasources/*.yaml
+chown -R grafana:grafana /var/lib/grafana/dashboards
+chgrp -R grafana /etc/grafana/provisioning
+cat >> /etc/default/grafana-server <<'EOF'
+GF_SECURITY_ADMIN_PASSWORD=${grafana_admin_password}
+EOF
+systemctl daemon-reload
+systemctl enable grafana-server
+systemctl restart grafana-server

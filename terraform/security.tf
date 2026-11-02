@@ -6,22 +6,16 @@ resource "aws_security_group" "onprem_gw" {
   description = "Office gateway: VPN from cloud-edge, SSH from the internet, traffic from the office network"
   vpc_id      = aws_vpc.office.id
 
-  # SSH is open to the internet on purpose: onprem-gw is the monitored attack
-  # surface for the SOAR. Only key-based login is possible, password login is disabled.
+  # All internet traffic is let through to onprem-gw on purpose. onprem-gw simulates
+  # the office edge router, the first device a real office receives internet traffic on.
+  # nftables on onprem-gw is the actual firewall: default deny, only SSH (key-based) and
+  # the VPN are open, and every dropped packet is logged for the monitoring and the SOAR.
   ingress {
-    description = "SSH from the internet, key-based login only"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
+    description = "All internet traffic, filtered and logged by nftables on onprem-gw"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "Ping from admin laptop"
-    from_port   = -1
-    to_port     = -1
-    protocol    = "icmp"
-    cidr_blocks = [var.admin_cidr]
   }
 
   ingress {
@@ -137,9 +131,10 @@ resource "aws_security_group" "cloud_edge" {
 }
 
 # Layer 2: network ACL on the office public subnet, the perimeter firewall.
-# Rules are separate resources on purpose: the SOAR adds its own deny rules
-# (numbers 1 to 99) and Terraform only manages the rules defined here, so an
-# apply never removes an active block.
+# The network ACL is the block list of the office. It allows all traffic, and the SOAR
+# adds deny rules for attackers with numbers 1 to 99, which are evaluated first.
+# Rules are separate resources on purpose: Terraform only manages the rules defined
+# here, so an apply never removes an active block.
 
 resource "aws_network_acl" "office_public" {
   vpc_id     = aws_vpc.office.id
@@ -149,12 +144,8 @@ resource "aws_network_acl" "office_public" {
 
 locals {
   office_nacl_ingress = {
-    "100" = { protocol = "-1", cidr = var.office_cidr, from = 0, to = 0 }                                 # office network
-    "110" = { protocol = "tcp", cidr = "0.0.0.0/0", from = 22, to = 22 }                                # SSH, monitored by the SOAR
-    "120" = { protocol = "udp", cidr = "${aws_eip.cloud_edge.public_ip}/32", from = 51820, to = 51820 }    # VPN
-    "130" = { protocol = "tcp", cidr = "0.0.0.0/0", from = 1024, to = 65535 }                             # return traffic
-    "140" = { protocol = "udp", cidr = "0.0.0.0/0", from = 1024, to = 65535 }                             # return traffic
-    "150" = { protocol = "1",    cidr = "0.0.0.0/0", from = 0, to = 0 }                                   # ping, path MTU
+    "100" = { protocol = "-1", cidr = var.office_cidr, from = 0, to = 0 } # office network
+    "200" = { protocol = "-1", cidr = "0.0.0.0/0", from = 0, to = 0 }     # internet, after the SOAR deny rules
   }
 }
 

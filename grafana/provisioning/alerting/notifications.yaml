@@ -1,0 +1,22 @@
+# Where alerts are sent. Step 2: every alert goes to the administrator by email
+# through Amazon SNS. In step 3, security alerts are routed to the SOAR instead.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: admin-email
+    receivers:
+      - uid: admin-email-sns
+        type: sns
+        settings:
+          topic_arn: SNS_TOPIC_ARN
+          sigv4:
+            region: AWS_REGION
+
+policies:
+  - orgId: 1
+    receiver: admin-email
+    group_by: ["alertname", "host"]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
