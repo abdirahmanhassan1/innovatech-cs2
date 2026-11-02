@@ -1,0 +1,59 @@
+# Installs the monitoring agents on every host:
+# node_exporter (metrics for Prometheus) and Grafana Alloy (logs for Loki).
+# The monitoring server installs its own agents at boot (user data).
+- name: Monitoring agents
+  hosts: agents
+  become: true
+  serial: 1   # one host at a time, so the gateways never restart together
+
+  tasks:
+    - name: Install node_exporter and dependencies
+      ansible.builtin.apt:
+        name: [prometheus-node-exporter, gpg]
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Add the Grafana package key
+      ansible.builtin.shell: |
+        mkdir -p /etc/apt/keyrings
+        curl -fsSL https://apt.grafana.com/gpg.key | gpg --dearmor -o /etc/apt/keyrings/grafana.gpg
+      args:
+        creates: /etc/apt/keyrings/grafana.gpg
+
+    - name: Add the Grafana package repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main"
+        filename: grafana
+        state: present
+
+    - name: Install Grafana Alloy
+      ansible.builtin.apt:
+        name: alloy
+        update_cache: true
+
+    - name: Allow Alloy to read the log files
+      ansible.builtin.user:
+        name: alloy
+        groups: adm
+        append: true
+      notify: Restart alloy
+
+    - name: Alloy configuration (same file as on the monitoring server)
+      ansible.builtin.copy:
+        src: ../monitoring/alloy/config.alloy
+        dest: /etc/alloy/config.alloy
+        mode: "0644"
+      notify: Restart alloy
+
+    - name: Agents enabled and running
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      loop: [prometheus-node-exporter, alloy]
+
+  handlers:
+    - name: Restart alloy
+      ansible.builtin.systemd:
+        name: alloy
+        state: restarted
