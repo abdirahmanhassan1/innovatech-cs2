@@ -73,3 +73,12 @@ output "ansible_inventory" {
     office_servers
   EOT
 }
+
+output "soar_api_url" {
+  description = "Webhook address of the SOAR, used by Grafana."
+  value       = "${aws_apigatewayv2_api.soar.api_endpoint}/alerts"
+}
+
+output "soar_processor_aliases" {
+  value = { for k, a in aws_lambda_alias.processor : k => a.arn }
+}

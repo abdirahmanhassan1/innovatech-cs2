@@ -209,6 +209,8 @@ resource "aws_launch_template" "monitoring" {
     sns_topic_arn          = aws_sns_topic.alerts.arn
     zone_id                = aws_route53_zone.internal.zone_id
     grafana_admin_password = var.grafana_admin_password
+    soar_url               = "${aws_apigatewayv2_api.soar.api_endpoint}/alerts"
+    soar_token             = var.soar_webhook_token
   }))
 
   tag_specifications {

@@ -13,7 +13,7 @@ resource "aws_sns_topic_subscription" "alerts_email" {
   endpoint  = var.budget_email
 }
 
-# AWS Budgets may publish to the topic, but only for this account.
+# AWS Budgets and the CloudWatch alarms of the SOAR may publish to the topic, only for this account.
 data "aws_iam_policy_document" "alerts_topic" {
   statement {
     sid       = "AllowBudgets"
@@ -22,6 +22,21 @@ data "aws_iam_policy_document" "alerts_topic" {
     principals {
       type        = "Service"
       identifiers = ["budgets.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+
+  statement {
+    sid       = "AllowCloudWatchAlarms"
+    actions   = ["SNS:Publish"]
+    resources = [aws_sns_topic.alerts.arn]
+    principals {
+      type        = "Service"
+      identifiers = ["cloudwatch.amazonaws.com"]
     }
     condition {
       test     = "StringEquals"

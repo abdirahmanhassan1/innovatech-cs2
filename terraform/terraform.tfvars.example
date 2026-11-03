@@ -15,3 +15,6 @@ budget_limit_usd = 50
 
 # Grafana admin password (step 2). Choose a strong password.
 grafana_admin_password = "change-me"
+
+# Shared secret between Grafana and the SOAR (step 3). Generate with: openssl rand -hex 32
+soar_webhook_token = "replace-with-64-hex-characters"

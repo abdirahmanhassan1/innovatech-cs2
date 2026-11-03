@@ -1,0 +1,20 @@
+{
+  "levels": {
+    "low": ["record"],
+    "medium": ["record", "notify"],
+    "high": ["record", "notify", "block"]
+  },
+  "types": {
+    "ssh_bruteforce": "high",
+    "port_scan": "high",
+    "ssh_login_failures": "medium"
+  },
+  "default_level": "low",
+  "allow_list": ["10.0.0.0/8", "172.16.0.0/12"],
+  "max_blocks": 15,
+  "environments": {
+    "test": {"block_minutes": 5, "allow_admin_ip": false},
+    "prod": {"block_minutes": 30, "allow_admin_ip": true}
+  },
+  "event_retention_days": 180
+}

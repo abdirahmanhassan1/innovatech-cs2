@@ -10,6 +10,10 @@ terraform {
       source  = "OJFord/wireguard"
       version = "~> 0.3"
     }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.7"
+    }
   }
 
   # Same state bucket as Case Study 1, separate key. use_lockfile enables native S3 state locking.

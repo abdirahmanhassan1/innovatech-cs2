@@ -55,6 +55,9 @@ cp -r $CFG/grafana/provisioning/. /etc/grafana/provisioning/
 mkdir -p /var/lib/grafana/dashboards
 cp $CFG/grafana/dashboards/*.json /var/lib/grafana/dashboards/
 sed -i "s|SNS_TOPIC_ARN|${sns_topic_arn}|; s|AWS_REGION|${region}|" /etc/grafana/provisioning/alerting/*.yaml /etc/grafana/provisioning/datasources/*.yaml
+# Address and token of the SOAR webhook. The token is never stored in the repository.
+sed -i "s|SOAR_URL|${soar_url}|; s|SOAR_TOKEN|${soar_token}|" /etc/grafana/provisioning/alerting/notifications.yaml
+chmod 640 /etc/grafana/provisioning/alerting/notifications.yaml
 chown -R grafana:grafana /var/lib/grafana/dashboards
 chgrp -R grafana /etc/grafana/provisioning
 cat >> /etc/default/grafana-server <<'EOF'
