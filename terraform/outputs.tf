@@ -79,6 +79,16 @@ output "soar_api_url" {
   value       = "${aws_apigatewayv2_api.soar.api_endpoint}/alerts"
 }
 
-output "soar_processor_aliases" {
-  value = { for k, a in aws_lambda_alias.processor : k => a.arn }
+output "soar_aliases" {
+  description = "ARNs of the test and prod aliases. The release pipeline decides which version each alias points to."
+  value = {
+    ingest    = { for k, a in aws_lambda_alias.ingest : k => a.arn }
+    processor = { for k, a in aws_lambda_alias.processor : k => a.arn }
+    cleanup   = { for k, a in aws_lambda_alias.cleanup : k => a.arn }
+  }
+}
+
+output "github_role_arns" {
+  description = "Roles the GitHub Actions workflows assume through OIDC."
+  value       = { for k, r in aws_iam_role.github : k => r.arn }
 }
