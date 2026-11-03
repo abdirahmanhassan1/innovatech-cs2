@@ -1,5 +1,6 @@
-# Where alerts are sent. Step 2: every alert goes to the administrator by email
-# through Amazon SNS. In step 3, security alerts are routed to the SOAR instead.
+# Where alerts are sent. Security alerts go to the SOAR, which decides what to do.
+# Operational alerts go to the administrator by email through Amazon SNS.
+# SOAR_URL and SOAR_TOKEN are filled in at boot. The token is not stored in the repository.
 apiVersion: 1
 
 contactPoints:
@@ -13,6 +14,18 @@ contactPoints:
           sigv4:
             region: AWS_REGION
 
+  - orgId: 1
+    name: soar-webhook
+    receivers:
+      - uid: soar-webhook
+        type: webhook
+        disableResolveMessage: true
+        settings:
+          url: SOAR_URL
+          httpMethod: POST
+          authorization_scheme: Bearer
+          authorization_credentials: SOAR_TOKEN
+
 policies:
   - orgId: 1
     receiver: admin-email
@@ -20,3 +33,11 @@ policies:
     group_wait: 30s
     group_interval: 5m
     repeat_interval: 4h
+    routes:
+      - receiver: soar-webhook
+        object_matchers:
+          - ["category", "=", "security"]
+        group_by: ["alertname", "host", "src_ip"]
+        group_wait: 10s
+        group_interval: 1m
+        repeat_interval: 4h
