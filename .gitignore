@@ -5,3 +5,5 @@ terraform.tfvars
 *.pem
 .DS_Store
 tfplan
+build/
+__pycache__/
