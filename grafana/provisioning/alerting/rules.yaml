@@ -200,3 +200,49 @@ groups:
           category: operations
         annotations:
           summary: "Disk usage on {{ $labels.host }} is above 85%"
+
+      - uid: soar-action-failed
+        title: SOAR action failed
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: cloudwatch
+            model:
+              refId: A
+              queryMode: Metrics
+              metricQueryType: 0
+              metricEditorMode: 0
+              region: default
+              namespace: Innovatech/SOAR
+              metricName: ActionsFailed
+              dimensions:
+                Action: "*"
+              matchExact: false
+              statistic: Sum
+              period: "300"
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: sum
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: math
+              expression: "$B > 0"
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: high
+          alert_type: soar_failure
+          category: operations
+        annotations:
+          summary: "The SOAR failed to process an event"
+          description: "A SOAR action failed in the last 10 minutes. Failed events are retried and moved to the dead-letter queue after three attempts."
