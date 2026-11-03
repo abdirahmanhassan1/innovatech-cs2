@@ -1,0 +1,103 @@
+# Update mechanism: installs all package updates on every server.
+# Started by the "updates" pipeline every week, or by hand:
+#   ansible-playbook update.yml
+# unattended-upgrades also runs on every server and installs security updates daily,
+# so security updates are installed even when the pipeline does not run.
+- name: Update all servers
+  hosts: all
+  become: true
+  serial: 1          # one server at a time, so the two VPN gateways are never down together
+  order: inventory
+
+  tasks:
+    - name: Refresh the package lists
+      ansible.builtin.apt:
+        update_cache: true
+
+    - name: List the packages that have an update
+      ansible.builtin.shell: set -o pipefail && apt list --upgradable 2>/dev/null | tail -n +2 | cut -d/ -f1
+      args:
+        executable: /bin/bash
+      register: upgradable
+      changed_when: false
+
+    - name: Install all updates
+      ansible.builtin.apt:
+        upgrade: dist
+
+    - name: Install unattended-upgrades (daily security updates)
+      ansible.builtin.apt:
+        name: unattended-upgrades
+        state: present
+
+    - name: Enable the daily unattended-upgrades run
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+        mode: "0644"
+
+    - name: Check whether an update needs a restart
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: reboot_required
+
+    - name: Restart the server, only when an update needs it
+      ansible.builtin.reboot:
+        msg: "Restart after package updates (Ansible)"
+        reboot_timeout: 600
+      when: reboot_required.stat.exists
+
+    - name: Check that the VPN tunnel is up again (recent WireGuard handshake)
+      ansible.builtin.shell: |
+        set -o pipefail
+        last=$(wg show wg0 latest-handshakes | awk '{print $2}')
+        [ "${last:-0}" -gt 0 ] && [ $(( $(date +%s) - last )) -lt 180 ]
+      args:
+        executable: /bin/bash
+      register: tunnel
+      changed_when: false
+      retries: 12
+      delay: 10
+      until: tunnel.rc == 0
+      when: "'gateways' in group_names"
+
+    - name: Keep the result for the update report
+      ansible.builtin.set_fact:
+        update_report:
+          packages: "{{ upgradable.stdout_lines }}"
+          restarted: "{{ reboot_required.stat.exists }}"
+
+- name: Write the update report
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Report folder
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/reports"
+        state: directory
+        mode: "0755"
+
+    - name: Update report
+      ansible.builtin.copy:
+        dest: "{{ playbook_dir }}/reports/update-report.md"
+        mode: "0644"
+        content: |
+          # Update report, {{ now(utc=true, fmt='%Y-%m-%d %H:%M UTC') }}
+
+          | Server | Updated packages | Restarted |
+          | --- | --- | --- |
+          {% for host in groups['all'] %}
+          {% set r = hostvars[host].update_report | default(none) %}
+          | {{ host }} | {{ r.packages | length if r else 'not updated' }} | {{ ('yes' if r.restarted else 'no') if r else '-' }} |
+          {% endfor %}
+
+          ## Packages per server
+          {% for host in groups['all'] %}
+          {% set r = hostvars[host].update_report | default(none) %}
+
+          **{{ host }}:** {{ ((r.packages | join(', ')) or 'no updates') if r else 'not updated' }}
+          {% endfor %}

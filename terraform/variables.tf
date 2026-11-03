@@ -104,3 +104,11 @@ variable "soar_webhook_token" {
     error_message = "Use a token of at least 32 characters."
   }
 }
+
+# ---------- Pipelines (step 4) ----------
+
+variable "github_repo" {
+  description = "GitHub repository (owner/name) whose workflows may use the pipeline roles."
+  type        = string
+  default     = "abdirahmanhassan1/innovatech-cs2"
+}
