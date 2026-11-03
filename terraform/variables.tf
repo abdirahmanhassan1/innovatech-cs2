@@ -112,3 +112,18 @@ variable "github_repo" {
   type        = string
   default     = "abdirahmanhassan1/innovatech-cs2"
 }
+
+# Numeric IDs of the owner and the repository. GitHub adds them to the OIDC subject of
+# repositories created after 15 July 2026, so a deleted or renamed repository can never be
+# replaced by another one with the same name. The IDs are public and never change.
+variable "github_owner_id" {
+  description = "Numeric ID of the GitHub account that owns the repository."
+  type        = string
+  default     = "233757406"
+}
+
+variable "github_repo_id" {
+  description = "Numeric ID of the GitHub repository."
+  type        = string
+  default     = "1439756588"
+}

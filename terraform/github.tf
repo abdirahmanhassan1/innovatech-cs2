@@ -5,7 +5,11 @@
 
 locals {
   github_oidc_host = "token.actions.githubusercontent.com"
-  github_subject   = "repo:${var.github_repo}"
+  github_owner     = split("/", var.github_repo)[0]
+  github_repo_name = split("/", var.github_repo)[1]
+  # Immutable subject format: repo:OWNER@OWNER_ID/REPO@REPO_ID, followed by the event,
+  # branch or environment, for example repo:owner@1/repo@2:environment:production.
+  github_subject = "repo:${local.github_owner}@${var.github_owner_id}/${local.github_repo_name}@${var.github_repo_id}"
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
