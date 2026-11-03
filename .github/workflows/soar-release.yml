@@ -1,0 +1,141 @@
+# Release pipeline of the SOAR functions (Flavor C: release management).
+# Pull request: unit tests only.
+# Merge to main: unit tests, new version of each function, "test" aliases moved and smoke
+# tested, then the "prod" aliases are moved after manual approval. Moving an alias is a
+# single switch, so production keeps working during the release.
+name: soar-release
+
+on:
+  pull_request:
+    paths: ["soar/**", ".github/workflows/soar-release.yml"]
+  push:
+    branches: [main]
+    paths: ["soar/**", ".github/workflows/soar-release.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: soar-release
+  cancel-in-progress: false
+
+# bash with "-eo pipefail": a failing command in a pipe also fails the step.
+defaults:
+  run:
+    shell: bash
+
+env:
+  AWS_REGION: eu-central-1
+  FUNCTIONS: ingest processor cleanup
+
+jobs:
+  unit-tests:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, innovatech]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unit tests of the rule engine
+        run: python3 -m unittest discover -s soar/tests -v
+
+  release-test:
+    needs: unit-tests
+    if: github.event_name != 'pull_request'
+    runs-on: [self-hosted, innovatech]
+    environment: soar-test
+    outputs:
+      versions: ${{ steps.publish.outputs.versions }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: AWS credentials (release role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/innovatech-github-release
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: soar-test-${{ github.run_id }}
+
+      - name: Build the package
+        run: python3 soar/scripts/build.py build/soar.zip
+
+      - name: Deploy the code and publish a new version of each function
+        id: publish
+        run: |
+          versions=""
+          for f in $FUNCTIONS; do
+            name="innovatech-soar-$f"
+            aws lambda update-function-code --function-name "$name" --zip-file fileb://build/soar.zip --query LastUpdateStatus --output text
+            aws lambda wait function-updated --function-name "$name"
+            v=$(aws lambda publish-version --function-name "$name" --description "${GITHUB_SHA::7} run ${GITHUB_RUN_ID}" --query Version --output text)
+            aws lambda wait published-version-active --function-name "$name" --qualifier "$v"
+            echo "$name: version $v"
+            versions="${versions}\"$f\": \"$v\", "
+          done
+          echo "versions={${versions%, }}" >> "$GITHUB_OUTPUT"
+
+      - name: Move the test aliases to the new versions
+        env:
+          VERSIONS: ${{ steps.publish.outputs.versions }}
+        run: |
+          for f in $FUNCTIONS; do
+            v=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])[sys.argv[2]])' "$VERSIONS" "$f")
+            aws lambda update-alias --function-name "innovatech-soar-$f" --name test --function-version "$v" --query FunctionVersion --output text
+          done
+
+      - name: Smoke test on the test aliases
+        env:
+          VERSIONS: ${{ steps.publish.outputs.versions }}
+          SOAR_WEBHOOK_TOKEN: ${{ secrets.SOAR_WEBHOOK_TOKEN }}
+          RUN_ID: ${{ github.run_id }}
+        run: python3 soar/tests/smoke_test.py "$VERSIONS" | tee smoke.txt
+
+      - name: Summary
+        if: always()
+        env:
+          VERSIONS: ${{ steps.publish.outputs.versions }}
+        run: |
+          {
+            echo "### Released to test"
+            echo "Versions: \`$VERSIONS\`"
+            echo '```'
+            cat smoke.txt 2>/dev/null || echo "no smoke test output"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release-prod:
+    needs: release-test
+    runs-on: [self-hosted, innovatech]
+    environment: production # waits for my approval in GitHub
+    steps:
+      - name: AWS credentials (release role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/innovatech-github-release
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: soar-prod-${{ github.run_id }}
+
+      # The previous version is stored in the alias description, for the rollback workflow.
+      - name: Move the prod aliases to the tested versions
+        env:
+          VERSIONS: ${{ needs.release-test.outputs.versions }}
+        run: |
+          {
+            echo "### Released to production"
+            echo "| Function | Previous version | New version |"
+            echo "| --- | --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for f in $FUNCTIONS; do
+            name="innovatech-soar-$f"
+            v=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])[sys.argv[2]])' "$VERSIONS" "$f")
+            previous=$(aws lambda get-alias --function-name "$name" --name prod --query FunctionVersion --output text)
+            if [ "$previous" = "$v" ]; then
+              echo "$name: prod already on version $v"
+            else
+              aws lambda update-alias --function-name "$name" --name prod --function-version "$v" \
+                --description "previous=$previous" --query FunctionVersion --output text
+            fi
+            echo "| $name | $previous | $v |" >> "$GITHUB_STEP_SUMMARY"
+          done
+          echo "Rollback: start the soar-rollback workflow." >> "$GITHUB_STEP_SUMMARY"
