@@ -186,6 +186,7 @@ resource "aws_lambda_function" "ingest" {
   filename         = data.archive_file.soar.output_path
   source_code_hash = data.archive_file.soar.output_base64sha256
   timeout          = 10
+  publish          = true
 
   environment {
     variables = {
@@ -194,11 +195,19 @@ resource "aws_lambda_function" "ingest" {
     }
   }
 
+  # After the first deployment, the code is released by the soar-release pipeline.
+  lifecycle {
+    ignore_changes = [filename, source_code_hash]
+  }
+
   depends_on = [aws_cloudwatch_log_group.soar, aws_iam_role_policy_attachment.soar_logs]
 }
 
-# Every change publishes a new version. The aliases "test" and "prod" point to a version,
-# and the alias that is invoked decides the environment (block time, allow list).
+# Release management: every function publishes versions, and the aliases "test" and "prod"
+# point to a version. Terraform creates the functions and aliases. After that, the
+# soar-release pipeline deploys new code and moves the aliases (test first, prod after
+# approval), so Terraform ignores the code and the alias versions.
+# For the processor, the invoked alias also decides the environment (block time, allow list).
 resource "aws_lambda_function" "processor" {
   function_name    = "${local.soar_name}-processor"
   role             = aws_iam_role.soar["processor"].arn
@@ -220,6 +229,10 @@ resource "aws_lambda_function" "processor" {
     }
   }
 
+  lifecycle {
+    ignore_changes = [filename, source_code_hash]
+  }
+
   depends_on = [aws_cloudwatch_log_group.soar, aws_iam_role_policy_attachment.soar_logs]
 }
 
@@ -228,6 +241,10 @@ resource "aws_lambda_alias" "processor" {
   name             = each.key
   function_name    = aws_lambda_function.processor.function_name
   function_version = aws_lambda_function.processor.version
+
+  lifecycle {
+    ignore_changes = [function_version]
+  }
 }
 
 resource "aws_lambda_function" "cleanup" {
@@ -238,6 +255,7 @@ resource "aws_lambda_function" "cleanup" {
   filename         = data.archive_file.soar.output_path
   source_code_hash = data.archive_file.soar.output_base64sha256
   timeout          = 30
+  publish          = true
 
   environment {
     variables = {
@@ -246,7 +264,35 @@ resource "aws_lambda_function" "cleanup" {
     }
   }
 
+  lifecycle {
+    ignore_changes = [filename, source_code_hash]
+  }
+
   depends_on = [aws_cloudwatch_log_group.soar, aws_iam_role_policy_attachment.soar_logs]
+}
+
+# Aliases for the ingest and cleanup functions. The triggers (API Gateway, EventBridge)
+# call the "prod" alias, so a new version only reaches production after approval.
+resource "aws_lambda_alias" "ingest" {
+  for_each         = toset(["test", "prod"])
+  name             = each.key
+  function_name    = aws_lambda_function.ingest.function_name
+  function_version = aws_lambda_function.ingest.version
+
+  lifecycle {
+    ignore_changes = [function_version]
+  }
+}
+
+resource "aws_lambda_alias" "cleanup" {
+  for_each         = toset(["test", "prod"])
+  name             = each.key
+  function_name    = aws_lambda_function.cleanup.function_name
+  function_version = aws_lambda_function.cleanup.version
+
+  lifecycle {
+    ignore_changes = [function_version]
+  }
 }
 
 # Production events from the queue go to the "prod" alias. A failed event is retried,
@@ -272,7 +318,7 @@ resource "aws_apigatewayv2_api" "soar" {
 resource "aws_apigatewayv2_integration" "ingest" {
   api_id                 = aws_apigatewayv2_api.soar.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_function.ingest.invoke_arn
+  integration_uri        = aws_lambda_alias.ingest["prod"].invoke_arn
   payload_format_version = "2.0"
 }
 
@@ -301,12 +347,12 @@ resource "aws_apigatewayv2_stage" "default" {
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.soar_api.arn
     format = jsonencode({
-      time     = "$context.requestTime"
-      ip       = "$context.identity.sourceIp"
-      route    = "$context.routeKey"
-      status   = "$context.status"
-      latency  = "$context.integrationLatency"
-      request  = "$context.requestId"
+      time    = "$context.requestTime"
+      ip      = "$context.identity.sourceIp"
+      route   = "$context.routeKey"
+      status  = "$context.status"
+      latency = "$context.integrationLatency"
+      request = "$context.requestId"
     })
   }
 }
@@ -315,6 +361,7 @@ resource "aws_lambda_permission" "api" {
   statement_id  = "AllowApiGateway"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.ingest.function_name
+  qualifier     = aws_lambda_alias.ingest["prod"].name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.soar.execution_arn}/*/*"
 }
@@ -329,13 +376,14 @@ resource "aws_cloudwatch_event_rule" "cleanup" {
 
 resource "aws_cloudwatch_event_target" "cleanup" {
   rule = aws_cloudwatch_event_rule.cleanup.name
-  arn  = aws_lambda_function.cleanup.arn
+  arn  = aws_lambda_alias.cleanup["prod"].arn
 }
 
 resource "aws_lambda_permission" "cleanup" {
   statement_id  = "AllowEventBridge"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.cleanup.function_name
+  qualifier     = aws_lambda_alias.cleanup["prod"].name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.cleanup.arn
 }
