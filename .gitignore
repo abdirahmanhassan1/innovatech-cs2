@@ -7,3 +7,5 @@ terraform.tfvars
 tfplan
 build/
 __pycache__/
+ansible/inventory.generated.ini
+ansible/reports/
