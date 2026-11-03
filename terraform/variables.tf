@@ -91,3 +91,16 @@ variable "repo_branch" {
   type        = string
   default     = "main"
 }
+
+# ---------- SOAR (step 3) ----------
+
+variable "soar_webhook_token" {
+  description = "Shared secret that Grafana sends with every webhook message to the SOAR. Generate with: openssl rand -hex 32"
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = length(var.soar_webhook_token) >= 32
+    error_message = "Use a token of at least 32 characters."
+  }
+}
