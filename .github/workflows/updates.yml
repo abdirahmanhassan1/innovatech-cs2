@@ -1,0 +1,83 @@
+# Update pipeline: runs the Ansible update playbook on all servers.
+# Every Monday, or started by hand. The server list comes from the Terraform output,
+# so new servers are included automatically. The update report is kept for 90 days.
+name: updates
+
+on:
+  schedule:
+    - cron: "17 8 * * 1" # Monday 08:17 UTC; runs when the runner on my laptop is online
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: updates
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  AWS_REGION: eu-central-1
+  ANSIBLE_FORCE_COLOR: "1"
+
+jobs:
+  update:
+    runs-on: [self-hosted, innovatech]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # cloud-edge only accepts SSH from admin_cidr, and the other servers are reached through it.
+      - name: Check that this laptop uses the admin address
+        env:
+          ADMIN_CIDR: ${{ secrets.ADMIN_CIDR }}
+        run: |
+          current="$(curl -fsS https://checkip.amazonaws.com)/32"
+          if [ "$current" != "$ADMIN_CIDR" ]; then
+            echo "::error::The public address of this laptop is not admin_cidr. Update the ADMIN_CIDR secret and apply it through the infra pipeline first."
+            exit 1
+          fi
+
+      - name: AWS credentials (read-only role, to read the Terraform outputs)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/innovatech-github-plan
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: updates-${{ github.run_id }}
+
+      - name: Server list from Terraform
+        run: |
+          export TF_PLUGIN_CACHE_DIR="$HOME/.terraform.d/plugin-cache"
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
+          terraform -chdir=terraform init -input=false
+          terraform -chdir=terraform output -raw ansible_inventory > ansible/inventory.generated.ini
+          grep -E '^\[|ansible_host' ansible/inventory.generated.ini | cut -d' ' -f1
+
+      - name: SSH key for the jump through cloud-edge
+        run: ssh-add -q ~/Downloads/innovatech-key.pem
+
+      - name: Update all servers
+        working-directory: ansible
+        run: ansible-playbook -i inventory.generated.ini update.yml
+
+      - name: Update report
+        if: always()
+        run: |
+          if [ -f ansible/reports/update-report.md ]; then
+            cat ansible/reports/update-report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No update report, see the log of the previous step." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: update-report-${{ github.run_id }}
+          path: ansible/reports/update-report.md
+          retention-days: 90
+          if-no-files-found: ignore

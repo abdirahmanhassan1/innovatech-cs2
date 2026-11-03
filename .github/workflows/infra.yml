@@ -1,0 +1,140 @@
+# Infrastructure pipeline.
+# Pull request: format check, validation and plan (read-only role).
+# Merge to main: plan, then apply exactly that plan after manual approval (production environment).
+name: infra
+
+on:
+  pull_request:
+    paths: ["terraform/**", ".github/workflows/infra.yml"]
+  push:
+    branches: [main]
+    paths: ["terraform/**", ".github/workflows/infra.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # needed for the OIDC token
+
+# Only one Terraform run at a time. The S3 state lock protects the state as well.
+concurrency:
+  group: terraform
+  cancel-in-progress: false
+
+# bash with "-eo pipefail": a failing command in a pipe also fails the step.
+defaults:
+  run:
+    shell: bash
+
+env:
+  AWS_REGION: eu-central-1
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  # Secrets are masked in the logs. Non-secret values are repository variables.
+  TF_VAR_admin_cidr: ${{ secrets.ADMIN_CIDR }}
+  TF_VAR_budget_email: ${{ secrets.BUDGET_EMAIL }}
+  TF_VAR_grafana_admin_password: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+  TF_VAR_soar_webhook_token: ${{ secrets.SOAR_WEBHOOK_TOKEN }}
+  TF_VAR_key_name: ${{ vars.KEY_NAME }}
+  TF_VAR_ami_id: ${{ vars.AMI_ID }}
+  TF_VAR_budget_limit_usd: ${{ vars.BUDGET_LIMIT_USD }}
+
+jobs:
+  plan:
+    # Never run pull requests from forks on the self-hosted runner.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, innovatech]
+    outputs:
+      changes: ${{ steps.plan.outputs.changes }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: AWS credentials (read-only plan role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/innovatech-github-plan
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: infra-plan-${{ github.run_id }}
+
+      - name: Provider cache and plan folder on the runner
+        run: |
+          echo "TF_PLUGIN_CACHE_DIR=$HOME/.terraform.d/plugin-cache" >> "$GITHUB_ENV"
+          echo "PLAN_FILE=$HOME/.innovatech/plans/${GITHUB_RUN_ID}.tfplan" >> "$GITHUB_ENV"
+          mkdir -p "$HOME/.terraform.d/plugin-cache"
+          mkdir -p -m 700 "$HOME/.innovatech/plans"
+          # Plans that were never approved are removed after a day.
+          find "$HOME/.innovatech/plans" -name '*.tfplan' -mtime +1 -delete
+
+      - name: Format check
+        run: terraform fmt -check -recursive
+
+      - name: Init
+        run: terraform init
+
+      - name: Validate
+        run: terraform validate -no-color
+
+      - name: Plan
+        id: plan
+        run: |
+          set +e
+          terraform plan -no-color -lock-timeout=5m -detailed-exitcode -out="$PLAN_FILE"
+          code=$?
+          set -e
+          if [ "$code" -eq 1 ]; then exit 1; fi
+          if [ "$code" -eq 2 ]; then echo "changes=true" >> "$GITHUB_OUTPUT"; else echo "changes=false" >> "$GITHUB_OUTPUT"; fi
+          {
+            echo "### Terraform plan"
+            echo '```'
+            terraform show -no-color "$PLAN_FILE" | grep -E '^ *# .* (will|must) be|^Plan:|^No changes' || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The plan file contains secrets. It stays on the runner and is never uploaded.
+      # For a pull request it is removed right away; after a merge the apply job uses it.
+      - name: Remove the plan of a pull request
+        if: always() && github.event_name == 'pull_request'
+        run: rm -f "$PLAN_FILE"
+
+  apply:
+    needs: plan
+    if: github.event_name != 'pull_request' && needs.plan.outputs.changes == 'true'
+    runs-on: [self-hosted, innovatech]
+    environment: production # waits for my approval in GitHub
+    defaults:
+      run:
+        shell: bash
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: AWS credentials (deploy role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/innovatech-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: infra-apply-${{ github.run_id }}
+
+      - name: Provider cache and plan file
+        run: |
+          echo "TF_PLUGIN_CACHE_DIR=$HOME/.terraform.d/plugin-cache" >> "$GITHUB_ENV"
+          echo "PLAN_FILE=$HOME/.innovatech/plans/${GITHUB_RUN_ID}.tfplan" >> "$GITHUB_ENV"
+
+      - name: Init
+        run: terraform init
+
+      # Applies the approved plan. Terraform refuses it if the state changed since the plan.
+      - name: Apply the approved plan
+        run: |
+          if [ ! -f "$PLAN_FILE" ]; then
+            echo "::error::Plan file not found. Start the workflow again to create a new plan."
+            exit 1
+          fi
+          terraform apply -no-color -lock-timeout=5m "$PLAN_FILE"
+
+      - name: Remove the plan file
+        if: always()
+        run: rm -f "$PLAN_FILE"
