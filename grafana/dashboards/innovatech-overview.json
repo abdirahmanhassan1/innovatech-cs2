@@ -1047,7 +1047,8 @@
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 10,
-            "drawStyle": "bars"
+            "drawStyle": "points",
+            "pointSize": 8
           },
           "min": 0
         },
@@ -1129,7 +1130,8 @@
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 10,
-            "drawStyle": "bars"
+            "drawStyle": "points",
+            "pointSize": 8
           },
           "min": 0
         },
@@ -1211,7 +1213,8 @@
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 10,
-            "drawStyle": "bars"
+            "drawStyle": "points",
+            "pointSize": 8
           },
           "min": 0
         },
@@ -1293,7 +1296,8 @@
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 10,
-            "drawStyle": "bars"
+            "drawStyle": "points",
+            "pointSize": 8
           },
           "min": 0
         },
