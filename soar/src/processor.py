@@ -111,8 +111,10 @@ def process(event, environment):
     if "block" in decision["actions"]:
         results["block"] = block(event, decision)
     if "notify" in decision["actions"]:
-        notify(event, decision, results)
+        # Added before sending, so the email itself lists every action. If sending fails,
+        # the exception stops the processing and SQS retries the event.
         results["notify"] = "email sent"
+        notify(event, decision, results)
 
     record(event, decision, results, "done")
     emit_metrics({"EventsProcessed": 1}, {"Level": decision["level"]})

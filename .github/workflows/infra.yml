@@ -50,10 +50,19 @@ jobs:
         shell: bash
         working-directory: terraform
     steps:
-      - uses: actions/checkout@v4
+      # The runner is my laptop, so the tools are checked first. A missing tool stops the
+      # job before it changes anything.
+      - name: Check the tools on the runner
+        working-directory: . # the terraform folder only exists after the checkout
+        run: |
+          for tool in terraform; do
+            command -v "$tool" >/dev/null || { echo "::error::$tool is not installed on the runner"; exit 1; }
+          done
+
+      - uses: actions/checkout@v7
 
       - name: AWS credentials (read-only plan role)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/innovatech-github-plan
           aws-region: ${{ env.AWS_REGION }}
@@ -109,10 +118,19 @@ jobs:
         shell: bash
         working-directory: terraform
     steps:
-      - uses: actions/checkout@v4
+      # The runner is my laptop, so the tools are checked first. A missing tool stops the
+      # job before it changes anything.
+      - name: Check the tools on the runner
+        working-directory: . # the terraform folder only exists after the checkout
+        run: |
+          for tool in terraform; do
+            command -v "$tool" >/dev/null || { echo "::error::$tool is not installed on the runner"; exit 1; }
+          done
+
+      - uses: actions/checkout@v7
 
       - name: AWS credentials (deploy role)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/innovatech-github-deploy
           aws-region: ${{ env.AWS_REGION }}

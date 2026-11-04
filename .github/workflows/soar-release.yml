@@ -35,7 +35,15 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, innovatech]
     steps:
-      - uses: actions/checkout@v4
+      # The runner is my laptop, so the tools are checked first. A missing tool stops the
+      # job before it changes anything.
+      - name: Check the tools on the runner
+        run: |
+          for tool in python3; do
+            command -v "$tool" >/dev/null || { echo "::error::$tool is not installed on the runner"; exit 1; }
+          done
+
+      - uses: actions/checkout@v7
 
       - name: Unit tests of the rule engine
         run: python3 -m unittest discover -s soar/tests -v
@@ -48,10 +56,18 @@ jobs:
     outputs:
       versions: ${{ steps.publish.outputs.versions }}
     steps:
-      - uses: actions/checkout@v4
+      # The runner is my laptop, so the tools are checked first. A missing tool stops the
+      # job before it changes anything.
+      - name: Check the tools on the runner
+        run: |
+          for tool in aws python3; do
+            command -v "$tool" >/dev/null || { echo "::error::$tool is not installed on the runner"; exit 1; }
+          done
+
+      - uses: actions/checkout@v7
 
       - name: AWS credentials (release role)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/innovatech-github-release
           aws-region: ${{ env.AWS_REGION }}
@@ -109,8 +125,16 @@ jobs:
     runs-on: [self-hosted, innovatech]
     environment: production # waits for my approval in GitHub
     steps:
+      # The runner is my laptop, so the tools are checked first. A missing tool stops the
+      # job before it changes anything.
+      - name: Check the tools on the runner
+        run: |
+          for tool in aws python3; do
+            command -v "$tool" >/dev/null || { echo "::error::$tool is not installed on the runner"; exit 1; }
+          done
+
       - name: AWS credentials (release role)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/innovatech-github-release
           aws-region: ${{ env.AWS_REGION }}

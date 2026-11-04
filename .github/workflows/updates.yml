@@ -29,7 +29,15 @@ jobs:
     runs-on: [self-hosted, innovatech]
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      # The runner is my laptop, so the tools are checked first. A missing tool stops the
+      # job before it changes anything.
+      - name: Check the tools on the runner
+        run: |
+          for tool in terraform ansible-playbook ssh-add curl; do
+            command -v "$tool" >/dev/null || { echo "::error::$tool is not installed on the runner"; exit 1; }
+          done
+
+      - uses: actions/checkout@v7
 
       # cloud-edge only accepts SSH from admin_cidr, and the other servers are reached through it.
       - name: Check that this laptop uses the admin address
@@ -43,7 +51,7 @@ jobs:
           fi
 
       - name: AWS credentials (read-only role, to read the Terraform outputs)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/innovatech-github-plan
           aws-region: ${{ env.AWS_REGION }}
@@ -75,7 +83,7 @@ jobs:
 
       - name: Keep the report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: update-report-${{ github.run_id }}
           path: ansible/reports/update-report.md
